@@ -1,0 +1,32 @@
+name: Find Team IDs
+
+on:
+  workflow_dispatch:
+    inputs:
+      team_name:
+        description: 'Nombre del equipo a buscar (ej: Real Madrid)'
+        required: true
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      - name: Run Search
+        env:
+          THESTATSAPI_KEY: ${{ secrets.THESTATSAPI_KEY }}
+          ISPORTSAPI_KEY: ${{ secrets.ISPORTSAPI_KEY }}
+        run: |
+          # Usamos comillas para permitir nombres con espacios
+          python engine/search_tool.py "${{ github.event.inputs.team_name }}"
