@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       match_id:
-        description: 'ID del Partido'
+        description: 'ID del Partido (Match ID)'
         required: true
       team_a_id:
-        description: 'ID Equipo Local'
+        description: 'ID Equipo Local (Home Team ID)'
         required: true
       team_b_id:
-        description: 'ID Equipo Visitante'
+        description: 'ID Equipo Visitante (Away Team ID)'
         required: true
 
 jobs:
@@ -31,8 +31,10 @@ jobs:
 
       - name: Run Prediction
         env:
+          # Pasamos las llaves de seguridad desde los Secrets de GitHub
           THESTATSAPI_KEY: ${{ secrets.THESTATSAPI_KEY }}
           ISPORTSAPI_KEY: ${{ secrets.ISPORTSAPI_KEY }}
+          # Pasamos los inputs del usuario al script de Python
           MATCH_ID: ${{ github.event.inputs.match_id }}
           TEAM_A_ID: ${{ github.event.inputs.team_a_id }}
           TEAM_B_ID: ${{ github.event.inputs.team_b_id }}
