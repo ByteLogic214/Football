@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       team_name:
-        description: 'Nombre del equipo a buscar (ej: Real Madrid)'
+        description: 'Nombre del equipo a buscar (ej: Bradford)'
         required: true
 
 jobs:
@@ -28,5 +28,6 @@ jobs:
           THESTATSAPI_KEY: ${{ secrets.THESTATSAPI_KEY }}
           ISPORTSAPI_KEY: ${{ secrets.ISPORTSAPI_KEY }}
         run: |
-          # Usamos comillas para permitir nombres con espacios
-          python engine/search_tool.py "${{ github.event.inputs.team_name }}"
+          # Usamos -m para que Python reconozca la carpeta 'engine' como un paquete
+          # Esto evita el error ModuleNotFoundError
+          python -m engine.search_tool "${{ github.event.inputs.team_name }}"
