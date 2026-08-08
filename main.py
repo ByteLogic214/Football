@@ -6,24 +6,22 @@ from engine.model import PredictionModel
 
 def extract_team_info(data, side):
     """
-    Busca de forma agresiva el ID y el nombre del equipo (home o away).
-    Intenta múltiples combinaciones de llaves comunes en APIs de fútbol.
+    Busca de forma agresiva el ID y el nombre del equipo.
+    Optimizado para la estructura: data['home_team']['id']
     """
-    # Lista de posibles llaves para el objeto del equipo
+    # Intentamos buscar la llave del equipo (home_team, away_team, home, away, etc.)
     possible_keys = [f'{side}_team', side, f'{side}Team', side.capitalize()]
     
     for key in possible_keys:
         if key in data:
             team_info = data[key]
-            # Si el objeto encontrado es un diccionario, buscamos dentro
             if isinstance(team_info, dict):
-                # Intentamos encontrar el ID con diferentes nombres de llave
-                t_id = team_info.get('id') or team_info.get('team_id') or team_info.get('id_team') or team_info.get('id')
-                # Intentamos encontrar el nombre
-                t_name = team_info.get('name') or team_info.get('team_name') or team_info.get('name_en')
+                # Buscamos el ID y el Nombre
+                t_id = team_info.get('id') or team_info.get('team_id')
+                t_name = team_info.get('name') or team_info.get('team_name')
                 
                 if t_id:
-                    return t_id, t_name
+                    return str(t_id), t_name
     return None, None
 
 def run_pipeline(match_id):
@@ -35,26 +33,30 @@ def run_pipeline(match_id):
 
     # 1. Obtener detalles del partido
     print("Obteniendo detalles del partido...")
-    match_data = client.get_match_details(match_id)
+    response = client.get_match_details(match_id)
     
-    if not match_data:
-        print("Error: No se pudo obtener la información del partido. Verifica el ID.")
+    if not response:
+        print("Error: No se pudo obtener la respuesta de la API.")
         return
 
-    # --- BLOQUE DE DEBUG (CRUCIAL SI FALLA) ---
-    # Esto imprimirá la estructura real en el log de GitHub Actions
-    print("\n[DEBUG] Estructura de la respuesta de la API:")
-    print(json.dumps(match_data, indent=2))
-    print("-" * 30 + "\n")
-    # -----------------------------------------
+    # --- SOLUCIÓN AL ERROR DEL ENVELOPE ---
+    # Si la respuesta tiene la llave 'data', entramos en ella.
+    if isinstance(response, dict) and 'data' in response:
+        match_data = response['data']
+        print("✅ Sobre 'data' abierto con éxito.")
+    else:
+        match_data = response
+        print("ℹ️ No se detectó sobre 'data', usando respuesta directa.")
+    # --------------------------------------
 
-    # 2. Extraer información de los equipos usando el extractor universal
+    # 2. Extraer información de los equipos
     team_a_id, team_a_name = extract_team_info(match_data, 'home')
     team_b_id, team_b_name = extract_team_info(match_data, 'away')
 
     if not team_a_id or not team_b_id:
         print("❌ ERROR: No se pudieron identificar los IDs de los equipos.")
-        print("Revisa la sección [DEBUG] arriba para ver cómo vienen los datos.")
+        print("Estructura detectada en el partido:")
+        print(json.dumps(match_data, indent=2))
         return
 
     print(f"✅ Partido detectado: {team_a_name} vs {team_b_name}")
@@ -79,9 +81,9 @@ def run_pipeline(match_id):
     predictions = model.predict_market(features)
 
     # 5. Resultados
-    print(f"\n{'='*40}")
+    print(f"\n{'='*45}")
     print(f" PROYECCIÓN: {team_a_name} vs {team_b_name}")
-    print(f"{'='*40}")
+    print(f"{'='*45}")
     for market, data in predictions.items():
         print(f"\nMercado: {market.upper()}")
         print(f"  - Proyección Total: {data['projection_total']}")
