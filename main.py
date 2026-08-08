@@ -10,22 +10,31 @@ def run_pipeline(match_id):
     processor = DataProcessor()
     model = PredictionModel()
 
-    # 1. Obtener detalles del partido para extraer los IDs de los equipos automáticamente
-    print("Obteniendo detalles del partido y equipos...")
+    # 1. Obtener detalles del partido
+    print("Obteniendo detalles del partido...")
     match_data = client.get_match_details(match_id)
     
     if not match_data:
-        print("Error: No se pudo encontrar el partido. Verifica el ID.")
+        print("Error: No se pudo obtener la información del partido. Verifica el ID.")
         return
 
-    team_a_id = match_data['home_team']['id']
-    team_b_id = match_data['away_team']['id']
-    team_a_name = match_data['home_team']['name']
-    team_b_name = match_data['away_team']['name']
+    # Extraer IDs de equipos (ajustado a la estructura probable de la API)
+    # Si la API devuelve los equipos en una estructura distinta, esto se ajustará
+    home_team = match_data.get('home_team') or match_data.get('home') or {}
+    away_team = match_data.get('away_team') or match_data.get('away') or {}
+    
+    team_a_id = home_team.get('id')
+    team_b_id = away_team.get('id')
+    team_a_name = home_team.get('name') or home_team.get('team_name') or "Local"
+    team_b_name = away_team.get('name') or away_team.get('team_name') or "Visitante"
+
+    if not team_a_id or not team_b_id:
+        print("Error: No se pudieron identificar los IDs de los equipos en este partido.")
+        return
 
     print(f"Partido detectado: {team_a_name} vs {team_b_name}")
 
-    # 2. Obtener historial de ambos equipos
+    # 2. Obtener historial
     print("Calculando promedios históricos...")
     hist_a = client.get_historical_team_data(team_a_id)
     hist_b = client.get_historical_team_data(team_b_id)
@@ -34,7 +43,7 @@ def run_pipeline(match_id):
     avg_b = processor.calculate_averages(hist_b)
 
     if not avg_a or not avg_b:
-        print("Error: Datos insuficientes para calcular promedios.")
+        print("Error: Datos insuficientes para calcular promedios. Verifica que los equipos tengan historial.")
         return
 
     # 3. Proyectar
