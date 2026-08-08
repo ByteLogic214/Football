@@ -19,36 +19,32 @@ def run_pipeline(match_id):
 
     match_data = response.get('data', response)
 
-    # Extraer IDs y Nombres
+    # Extraer IDs y Fecha
     team_a_id = match_data.get('home_team', {}).get('id')
     team_b_id = match_data.get('away_team', {}).get('id')
     team_a_name = match_data.get('home_team', {}).get('name', 'Local')
     team_b_name = match_data.get('away_team', {}).get('name', 'Visitante')
     match_date = match_data.get('utc_date', '').split('T')[0]
 
-    # VERIFICACIÓN DE IDENTIDAD (Crucial para evitar errores de asignación)
-    print(f"\n[VERIFICACIÓN]")
-    print(f"ID LOCAL: {team_a_id} | Nombre: {team_a_name}")
-    print(f"ID VISITANTE: {team_b_id} | Nombre: {team_b_name}")
-    print(f"FECHA PARTIDO: {match_date}\n")
-
     if not team_a_id or not team_b_id:
         print("❌ Error: No se pudieron identificar los IDs de los equipos.")
         return
 
-    # 2. Obtener historial (Asegurando que cada uno use su propio ID)
-    print("Recopilando estadísticas históricas detalladas...")
+    print(f"✅ Partido: {team_a_name} vs {team_b_name} ({match_date})")
+
+    # 2. Obtener historial
+    print("\nRecopilando estadísticas históricas detalladas...")
     hist_a = client.get_historical_team_data(team_a_id, match_date)
     hist_b = client.get_historical_team_data(team_b_id, match_date)
 
-    # 3. Calcular promedios pasando el ID para la distinción Home/Away
+    # 3. Calcular promedios (Pasando el ID para distinguir Home/Away)
     print(f"Procesando {len(hist_a)} partidos de {team_a_name} y {len(hist_b)} de {team_b_name}...")
     avg_a = processor.calculate_averages(hist_a, team_a_id)
     avg_b = processor.calculate_averages(hist_b, team_b_id)
 
+    # Verificación de promedios (Si un equipo no tiene datos de una métrica, el promedio será None)
     if not avg_a or not avg_b:
-        print(f"❌ Error: No se pudieron calcular promedios.")
-        print(f"   Detalle: {team_a_name} ({len(hist_a)} partidos), {team_b_name} ({len(hist_b)} partidos)")
+        print("❌ Error: No se pudieron calcular promedios suficientes.")
         return
 
     # 4. Proyectar
