@@ -1,11 +1,12 @@
-name: Find Team IDs
+name: Find Matches by Date
 
 on:
   workflow_dispatch:
     inputs:
-      team_name:
-        description: 'Nombre del equipo a buscar (ej: Bradford)'
+      date:
+        description: 'Fecha (YYYY-MM-DD)'
         required: true
+        default: '2024-05-20'
 
 jobs:
   search:
@@ -13,21 +14,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
       - name: Install dependencies
-        run: |
-          pip install requests
-
+        run: pip install requests
       - name: Run Search
         env:
           THESTATSAPI_KEY: ${{ secrets.THESTATSAPI_KEY }}
           ISPORTSAPI_KEY: ${{ secrets.ISPORTSAPI_KEY }}
-        run: |
-          # Usamos -m para que Python reconozca la carpeta 'engine' como un paquete
-          # Esto evita el error ModuleNotFoundError
-          python -m engine.search_tool "${{ github.event.inputs.team_name }}"
+        run: python -m engine.match_finder "${{ github.event.inputs.date }}"
