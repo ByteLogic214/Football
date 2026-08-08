@@ -1,0 +1,39 @@
+name: Football Market Projection
+
+on:
+  workflow_dispatch:
+    inputs:
+      match_id:
+        description: 'ID del Partido'
+        required: true
+      team_a_id:
+        description: 'ID Equipo Local'
+        required: true
+      team_b_id:
+        description: 'ID Equipo Visitante'
+        required: true
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Prediction
+        env:
+          THESTATSAPI_KEY: ${{ secrets.THESTATSAPI_KEY }}
+          ISPORTSAPI_KEY: ${{ secrets.ISPORTSAPI_KEY }}
+          MATCH_ID: ${{ github.event.inputs.match_id }}
+          TEAM_A_ID: ${{ github.event.inputs.team_a_id }}
+          TEAM_B_ID: ${{ github.event.inputs.team_b_id }}
+        run: python main.py
