@@ -1,8 +1,7 @@
 class DataProcessor:
     def calculate_averages(self, history, team_id):
         """
-        Calcula promedios analizando el rol del equipo (home/away) 
-        en cada partido del historial.
+        Calcula promedios navegando por: item['stats']['overview'][metric]['all'][side]
         """
         if not history:
             return None
@@ -14,41 +13,37 @@ class DataProcessor:
             "goals": 0.0
         }
         count = 0
+        target_id = str(team_id)
 
         for item in history:
-            match = item.get("match", {})
-            stats = item.get("stats", {})
-            
-            # 1. Determinar el lado (home o away) del equipo en este partido
-            side = None
-            home_id = str(match.get("home_team", {}).get("id"))
-            away_id = str(match.get("away_team", {}).get("id"))
-            target_id = str(team_id)
-
-            if target_id == home_id:
-                side = "home"
-            elif target_id == away_id:
-                side = "away"
-            
-            if not side:
-                continue
-
-            # 2. Acceder a la estructura anidada: stats -> overview -> [metric] -> all -> [side]
             try:
+                match = item.get("match", {})
+                stats = item.get("stats", {})
                 overview = stats.get("overview", {})
-                
-                # Función auxiliar para extraer con seguridad
-                def get_metric_val(metric_name):
-                    return overview.get(metric_name, {}).get("all", {}).get(side, 0)
 
-                sums["shots_on_target"] += float(get_metric_val("shots_on_target"))
-                sums["total_shots"] += float(get_metric_val("total_shots"))
-                sums["corners"] += float(get_metric_val("corners"))
-                sums["goals"] += float(get_metric_val("goals"))
+                # 1. Determinar si el equipo fue Home o Away en este partido
+                home_id = str(match.get("home_team", {}).get("id"))
+                away_id = str(match.get("away_team", {}).get("id"))
+                
+                side = None
+                if target_id == home_id:
+                    side = "home"
+                elif target_id == away_id:
+                    side = "away"
+                
+                if not side:
+                    continue
+
+                # 2. Extraer métricas usando la ruta exacta proporcionada
+                # Estructura: overview -> metric -> all -> side
+                sums["shots_on_target"] += float(overview.get("shots_on_target", {}).get("all", {}).get(side, 0))
+                sums["total_shots"] += float(overview.get("total_shots", {}).get("all", {}).get(side, 0))
+                sums["corners"] += float(overview.get("corners", {}).get("all", {}).get(side, 0))
+                sums["goals"] += float(overview.get("goals", {}).get("all", {}).get(side, 0))
                 
                 count += 1
             except Exception as e:
-                # Si un partido tiene estructura corrupta, lo saltamos
+                print(f"⚠️ Error procesando un partido del historial: {e}")
                 continue
 
         if count == 0:
