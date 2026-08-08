@@ -9,64 +9,79 @@ class FootballDataClient:
         self.isports_base_url = "https://api.isportsapi.com"
 
     def get_matches_by_date(self, date_str):
-        """
-        Consulta partidos usando el endpoint exacto proporcionado.
-        """
-        print(f"Consultando partidos para: {date_str}")
         url = f"{self.stats_base_url}/football/matches"
-        
-        headers = {
-            "Authorization": f"Bearer {self.stats_api_key}"
-        }
-        
-        # Parámetros exactos según tu documentación
+        headers = {"Authorization": f"Bearer {self.stats_api_key}"}
+        params = {"date_from": date_str, "date_to": date_str, "utc_offset": "-06:00", "per_page": 100, "status": "scheduled"}
+        try:
+            res = requests.get(url, headers=headers, params=params)
+            return res.json().get('data', []) if res.status_code == 200 else []
+        except: return []
+
+    def get_match_details(self, match_id):
+        url = f"{self.stats_base_url}/football/matches/{match_id}"
+        headers = {"Authorization": f"Bearer {self.stats_api_key}"}
+        try:
+            res = requests.get(url, headers=headers)
+            return res.json() if res.status_code == 200 else None
+        except: return None
+
+    def get_historical_team_data(self, team_id, date_to):
+        """
+        NUEVA LÓGICA: Busca partidos terminados del equipo y extrae estadísticas de cada uno.
+        """
+        print(f"Buscando historial para equipo {team_id} hasta {date_to}...")
+        url = f"{self.stats_base_url}/football/matches"
+        headers = {"Authorization": f"Bearer {self.stats_api_key}"}
         params = {
-            "date_from": date_str,
-            "date_to": date_str,
-            "utc_offset": "-06:00", # Ajustado a CDMX según tu ejemplo
-            "per_page": 100,
-            "status": "scheduled"   # Solo partidos programados
+            "team_id": team_id,
+            "date_to": date_to,
+            "status": "finished",
+            "per_page": 15, # Limitamos para no saturar la API y ser rápidos
+            "utc_offset": "-06:00"
         }
+
+        history_stats = []
 
         try:
             res = requests.get(url, headers=headers, params=params)
-            if res.status_code == 200:
-                data = res.json()
-                # La API suele devolver los datos dentro de una llave 'data'
-                return data.get('data', []) if isinstance(data, dict) else data
-            else:
-                print(f"❌ Error API TheStatsAPI: {res.status_code}")
-                print(f"Respuesta: {res.text}")
+            if res.status_code != 200:
                 return []
+            
+            matches = res.json().get('data', [])
+            print(f"Se encontraron {len(matches)} partidos terminados.")
+
+            for m in matches:
+                m_id = m.get('id')
+                if m_id:
+                    # Para cada partido, consultamos sus estadísticas detalladas
+                    stats = self.get_match_stats(m_id)
+                    if stats:
+                        history_stats.append(stats)
+            
+            return history_stats
         except Exception as e:
-            print(f"❌ Error de conexión: {e}")
+            print(f"Error al obtener historial: {e}")
             return []
 
-    def get_match_details(self, match_id):
+    def get_match_stats(self, match_id):
         """
-        Obtiene detalles de un partido específico.
-        Basado en el patrón de la API: /football/matches/{id}
+        Consulta el endpoint de estadísticas detalladas de un partido.
         """
-        url = f"{self.stats_base_url}/football/matches/{match_id}"
+        url = f"{self.stats_base_url}/football/matches/{match_id}/stats"
         headers = {"Authorization": f"Bearer {self.stats_api_key}"}
         
         try:
             res = requests.get(url, headers=headers)
             if res.status_code == 200:
-                return res.json()
-            else:
-                print(f"❌ Error al obtener detalles del partido: {res.status_code}")
-                return None
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            return None
-
-    def get_historical_team_data(self, team_id):
-        """Obtiene historial para promedios"""
-        url = f"{self.stats_base_url}/football/teams/{team_id}/history"
-        headers = {"Authorization": f"Bearer {self.stats_api_key}"}
-        try:
-            res = requests.get(url, headers=headers)
-            return res.json() if res.status_code == 200 else []
+                data = res.json().get('data', {})
+                # Mapeamos los datos de la API a las llaves que nuestro modelo entiende
+                # Nota: Ajustar estas llaves si la API usa nombres distintos (ej: 'shots_on_goal')
+                return {
+                    "shots_on_target": data.get('shots_on_target', 0),
+                    "total_shots": data.get('total_shots', 0),
+                    "corners": data.get('corners', 0),
+                    "goals": data.get('goals', 0)
+                }
         except:
-            return []
+            pass
+        return None
