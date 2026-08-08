@@ -5,23 +5,14 @@ from engine.processor import DataProcessor
 from engine.model import PredictionModel
 
 def extract_team_info(data, side):
-    """
-    Busca de forma agresiva el ID y el nombre del equipo.
-    Optimizado para la estructura: data['home_team']['id']
-    """
-    # Intentamos buscar la llave del equipo (home_team, away_team, home, away, etc.)
     possible_keys = [f'{side}_team', side, f'{side}Team', side.capitalize()]
-    
     for key in possible_keys:
         if key in data:
             team_info = data[key]
             if isinstance(team_info, dict):
-                # Buscamos el ID y el Nombre
                 t_id = team_info.get('id') or team_info.get('team_id')
                 t_name = team_info.get('name') or team_info.get('team_name')
-                
-                if t_id:
-                    return str(t_id), t_name
+                if t_id: return str(t_id), t_name
     return None, None
 
 def run_pipeline(match_id):
@@ -39,15 +30,15 @@ def run_pipeline(match_id):
         print("Error: No se pudo obtener la respuesta de la API.")
         return
 
-    # --- SOLUCIÓN AL ERROR DEL ENVELOPE ---
-    # Si la respuesta tiene la llave 'data', entramos en ella.
     if isinstance(response, dict) and 'data' in response:
         match_data = response['data']
-        print("✅ Sobre 'data' abierto con éxito.")
     else:
         match_data = response
-        print("ℹ️ No se detectó sobre 'data', usando respuesta directa.")
-    # --------------------------------------
+
+    # EXTRAER FECHA PARA EL HISTORIAL (Formato YYYY-MM-DD)
+    # La API devuelve "2026-08-09T00:45:00.000Z", tomamos solo la parte de la fecha
+    utc_date_full = match_data.get('utc_date', '')
+    match_date = utc_date_full.split('T')[0] if utc_date_full else ""
 
     # 2. Extraer información de los equipos
     team_a_id, team_a_name = extract_team_info(match_data, 'home')
@@ -55,27 +46,25 @@ def run_pipeline(match_id):
 
     if not team_a_id or not team_b_id:
         print("❌ ERROR: No se pudieron identificar los IDs de los equipos.")
-        print("Estructura detectada en el partido:")
-        print(json.dumps(match_data, indent=2))
         return
 
     print(f"✅ Partido detectado: {team_a_name} vs {team_b_name}")
-    print(f"   IDs: Local({team_a_id}) | Visitante({team_b_id})")
+    print(f"   Fecha del partido: {match_date}")
 
-    # 3. Obtener historial
-    print("\nCalculando promedios históricos...")
-    hist_a = client.get_historical_team_data(team_a_id)
-    hist_b = client.get_historical_team_data(team_b_id)
+    # 3. Obtener historial usando la nueva lógica de fecha y búsqueda de partidos
+    print("\nRecopilando estadísticas de partidos anteriores...")
+    hist_a = client.get_historical_team_data(team_a_id, match_date)
+    hist_b = client.get_historical_team_data(team_b_id, match_date)
 
+    if not hist_a or not hist_b:
+        print(f"❌ Error: Datos insuficientes. Historial A: {len(hist_a)} partidos, Historial B: {len(hist_b)} partidos.")
+        return
+
+    # 4. Procesar y Proyectar
+    print(f"Calculando promedios con {len(hist_a)} partidos de {team_a_name} y {len(hist_b)} de {team_b_name}...")
     avg_a = processor.calculate_averages(hist_a)
     avg_b = processor.calculate_averages(hist_b)
 
-    if not avg_a or not avg_b:
-        print("❌ Error: Datos insuficientes para calcular promedios.")
-        print("Asegúrate de que los equipos tengan historial disponible en la API.")
-        return
-
-    # 4. Proyectar
     print("Ejecutando modelo de ML...")
     features = processor.prepare_features(avg_a, avg_b)
     predictions = model.predict_market(features)
