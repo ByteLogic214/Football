@@ -25,6 +25,33 @@ class FootballDataClient:
     def get_match_details(self, match_id):
         return self.get(f"/football/matches/{match_id}")
 
+    def get_matches_by_date(self, date_str):
+        """
+        Obtiene los partidos para una fecha específica.
+        
+        Args:
+            date_str: Fecha en formato YYYY-MM-DD
+            
+        Returns:
+            Lista de partidos para la fecha especificada
+        """
+        params = {
+            "date_from": date_str,
+            "date_to": date_str,
+            "status": "*"
+        }
+        
+        print(f"[API] Solicitando partidos para la fecha: {date_str}")
+        response = self.get("/football/matches", params=params)
+        
+        if not response:
+            return []
+        
+        matches = response.get("data", [])
+        print(f"[API] Se encontraron {len(matches)} partidos")
+        
+        return matches
+
     def get_historical_team_data(self, team_id, match_date):
         """
         Implementación optimizada: Procesa máximo 10 partidos recientes.
