@@ -28,6 +28,7 @@ class FootballDataClient:
     def get_matches_by_date(self, date_str):
         """
         Obtiene los partidos para una fecha específica.
+        Recorre todas las páginas si es necesario.
         
         Args:
             date_str: Fecha en formato YYYY-MM-DD
@@ -35,22 +36,43 @@ class FootballDataClient:
         Returns:
             Lista de partidos para la fecha especificada
         """
-        params = {
-            "date_from": date_str,
-            "date_to": date_str,
-            "status": "*"
-        }
+        all_matches = []
+        page = 1
         
         print(f"[API] Solicitando partidos para la fecha: {date_str}")
-        response = self.get("/football/matches", params=params)
         
-        if not response:
-            return []
+        while True:
+            params = {
+                "date_from": date_str,
+                "date_to": date_str,
+                "per_page": 100,
+                "page": page
+            }
+            
+            response = self.get("/football/matches", params=params)
+            
+            if not response:
+                break
+            
+            matches = response.get("data", [])
+            all_matches.extend(matches)
+            
+            # Verificar si hay más páginas
+            meta = response.get("meta", {})
+            total_pages = meta.get("total_pages", 1)
+            
+            print(f"[API] Página {page}/{total_pages} - {len(matches)} partidos")
+            
+            if page >= total_pages:
+                break
+            
+            page += 1
+            # Pausa de cortesía entre páginas
+            time.sleep(0.5)
         
-        matches = response.get("data", [])
-        print(f"[API] Se encontraron {len(matches)} partidos")
+        print(f"[API] Se encontraron {len(all_matches)} partidos en total")
         
-        return matches
+        return all_matches
 
     def get_historical_team_data(self, team_id, match_date):
         """
