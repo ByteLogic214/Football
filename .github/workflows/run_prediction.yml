@@ -24,4 +24,4 @@ jobs:
           THESTATSAPI_KEY: ${{ secrets.THESTATSAPI_KEY }}
           ISPORTSAPI_KEY: ${{ secrets.ISPORTSAPI_KEY }}
           MATCH_ID: ${{ github.event.inputs.match_id }}
-        run: python main.py
+        run: python main_advanced.py
