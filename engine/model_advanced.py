@@ -17,6 +17,12 @@ class AdvancedPredictionModel:
             "xg": 0.20,
             "base": 0.25
         }
+        # Prior weight for Bayesian shrinkage toward league mean
+        self.shrinkage_prior = 5.0
+        # Cap for extreme team-level xG
+        self.max_team_xg = 2.8
+        # Smallest line step (half-goal increments)
+        self.line_step = 0.5
     
     def _apply_form_adjustment(self, base_prediction, features):
         """Ajusta predicción según forma reciente"""
@@ -70,6 +76,38 @@ class AdvancedPredictionModel:
         adjustment = dominance * 0.15 + (h2h_goals * 0.05)
         return adjustment
     
+    def _compute_safe_lines(self, projection, confidence_margin, min_lower=0.0, step=None):
+        """
+        Compute safe_over_line and safe_under_line so that:
+          safe_over_line < projection < safe_under_line
+        Lines are rounded to the nearest step (default: self.line_step).
+        """
+        if step is None:
+            step = self.line_step
+        # safe_over should be strictly less than projection
+        safe_over = math.floor((projection - confidence_margin) / step) * step
+        # safe_under should be strictly greater than projection
+        safe_under = math.ceil((projection + confidence_margin) / step) * step
+        # Ensure strict inequalities; adjust by one step if equal
+        if safe_over >= projection:
+            safe_over = projection - step
+        if safe_under <= projection:
+            safe_under = projection + step
+        # Enforce minimum lower bound
+        safe_over = max(min_lower, safe_over)
+        return safe_over, safe_under
+    
+    def _shrink_toward_league(self, value, sample_size, league_mean):
+        """
+        Apply Bayesian shrinkage toward league_mean when sample_size is small
+        """
+        if sample_size is None or sample_size > self.shrinkage_prior:
+            return value
+        prior = self.shrinkage_prior
+        n = max(0.0, float(sample_size))
+        shrunk = (n * value + prior * league_mean) / (n + prior)
+        return shrunk
+    
     def predict_goals(self, features):
         """
         Predicción avanzada de goles con todas las features
@@ -77,14 +115,47 @@ class AdvancedPredictionModel:
         # Predicción base (xG si está disponible, sino promedios)
         xg_home = features.get("xg_home")
         xg_away = features.get("xg_away")
-        
-        if xg_home is not None and xg_away is not None:
-            base_home = xg_home
-            base_away = xg_away
-        else:
+        missing_xg_count = 0
+        imputed_flag = False
+
+        # League defaults
+        league_team_xg = features.get("league_avg_team_xg", 1.25)
+        league_conversion = features.get("league_avg_conversion", 0.12)
+
+        # If xG missing, try to impute from shots on target
+        if xg_home is None:
+            shots_on_target_home = features.get("shots_on_target_home")
+            if shots_on_target_home is not None:
+                xg_home = shots_on_target_home * league_conversion
+                imputed_flag = True
+            else:
+                missing_xg_count += 1
+        if xg_away is None:
+            shots_on_target_away = features.get("shots_on_target_away")
+            if shots_on_target_away is not None:
+                xg_away = shots_on_target_away * league_conversion
+                imputed_flag = True
+            else:
+                missing_xg_count += 1
+
+        # Fall back to raw goals averages only if we absolutely have no xG nor shots
+        if xg_home is None and xg_away is None:
             base_home = features.get("goals_home", 1.5)
             base_away = features.get("goals_away", 1.0)
-        
+        else:
+            base_home = xg_home if xg_home is not None else features.get("goals_home", 1.25)
+            base_away = xg_away if xg_away is not None else features.get("goals_away", 1.0)
+
+        # Apply shrinkage toward league mean when sample sizes are small
+        sample_home = features.get("sample_size_home")
+        sample_away = features.get("sample_size_away")
+        base_home = self._shrink_toward_league(base_home, sample_home, league_team_xg)
+        base_away = self._shrink_toward_league(base_away, sample_away, league_team_xg)
+
+        # Cap extreme team-level xG for realism
+        base_home = min(base_home, self.max_team_xg)
+        base_away = min(base_away, self.max_team_xg)
+
         # Aplicar ajustes progresivos
         adjusted_home = base_home
         adjusted_away = base_away
@@ -116,13 +187,38 @@ class AdvancedPredictionModel:
         # Asegurar valores mínimos razonables
         adjusted_home = max(0.5, adjusted_home)
         adjusted_away = max(0.3, adjusted_away)
-        
+
+        # Final projection
+        total_prediction = adjusted_home + adjusted_away
+
+        # Compute confidence and apply penalty for missing data
+        consistency_avg = (
+            features.get("consistency_home_off", 0.5) + 
+            features.get("consistency_away_off", 0.5)
+        ) / 2
+        # Base confidence based on consistency
+        base_confidence = consistency_avg
+        # Penalize missing xG but less severely if we imputed
+        penalty = 0.0
+        if missing_xg_count > 0:
+            penalty += 0.06 * missing_xg_count  # 6% per truly missing xG
+        if imputed_flag:
+            penalty += 0.03  # small penalty for imputed xG
+        confidence_level = max(0.0, base_confidence * (1 - penalty))
+
+        # Confidence margin used to set safe lines
+        confidence_margin = 1.5 - (consistency_avg * 0.5)
+        safe_over, safe_under = self._compute_safe_lines(total_prediction, confidence_margin, min_lower=0.5)
+
         return {
             "goals_home_prediction": round(adjusted_home, 2),
             "goals_away_prediction": round(adjusted_away, 2),
-            "goals_total_prediction": round(adjusted_home + adjusted_away, 2),
+            "goals_total_prediction": round(total_prediction, 2),
             "goals_home_base": round(base_home, 2),
-            "goals_away_base": round(base_away, 2)
+            "goals_away_base": round(base_away, 2),
+            "confidence_level": round(confidence_level * 100, 1),
+            "safe_under_line": safe_under,
+            "safe_over_line": safe_over
         }
     
     def predict_market(self, features):
@@ -133,33 +229,20 @@ class AdvancedPredictionModel:
         markets = ['shots_on_target', 'total_shots', 'corners', 'goals']
         
         # Predicción especial para goles usando modelo avanzado
-        if 'goals_home' in features or 'xg_home' in features:
+        if 'goals_home' in features or 'xg_home' in features or 'goals_away' in features or 'xg_away' in features:
             goals_pred = self.predict_goals(features)
-            
             pred_total = goals_pred["goals_total_prediction"]
             pred_home = goals_pred["goals_home_prediction"]
             pred_away = goals_pred["goals_away_prediction"]
-            
-            # Calcular niveles de confianza basados en consistencia
-            consistency_avg = (
-                features.get("consistency_home_off", 0.5) + 
-                features.get("consistency_away_off", 0.5)
-            ) / 2
-            
-            # Mayor consistencia = líneas más ajustadas
-            confidence_margin = 1.5 - (consistency_avg * 0.5)
-            
-            safe_under = math.floor((pred_total - confidence_margin) * 2) / 2
-            safe_over = math.ceil((pred_total + confidence_margin) * 2) / 2
             
             results['goals'] = {
                 "projection_total": pred_total,
                 "projection_home": pred_home,
                 "projection_away": pred_away,
                 "projection_max": max(pred_home, pred_away),
-                "safe_under_line": max(0.5, safe_under),
-                "safe_over_line": safe_over,
-                "confidence_level": round(consistency_avg * 100, 1),
+                "safe_under_line": goals_pred["safe_under_line"],
+                "safe_over_line": goals_pred["safe_over_line"],
+                "confidence_level": goals_pred.get("confidence_level", round(((features.get("consistency_home_off", 0.5) + features.get("consistency_away_off", 0.5))/2)*100, 1)),
                 "adjustments_applied": {
                     "form_impact": round(
                         features.get("form_advantage", 0) * self.weights["form"], 2
@@ -197,16 +280,14 @@ class AdvancedPredictionModel:
             ) / 2
             
             confidence_margin = 1.5 - (consistency_avg * 0.5)
-            
-            safe_under = math.floor((pred_total_adj - confidence_margin) * 2) / 2
-            safe_over = math.ceil((pred_total_adj + confidence_margin) * 2) / 2
+            safe_over, safe_under = self._compute_safe_lines(pred_total_adj, confidence_margin, min_lower=0.0)
             
             results[m] = {
                 "projection_total": round(pred_total_adj, 2),
                 "projection_home": round(pred_home * form_mult, 2),
                 "projection_away": round(pred_away * form_mult, 2),
                 "projection_max": round(max(pred_home, pred_away) * form_mult, 2),
-                "safe_under_line": max(0.0, safe_under),
+                "safe_under_line": safe_under,
                 "safe_over_line": safe_over,
                 "confidence_level": round(consistency_avg * 100, 1)
             }
@@ -240,6 +321,7 @@ class AdvancedPredictionModel:
                     if total < 2.3:
                         recommendations.append({
                             "market": "Goles Totales",
+                            # safe_over is intentionally below projection (safer over bet)
                             "bet": f"UNDER {pred['safe_over_line']}",
                             "confidence": bet_confidence,
                             "risk": risk_level,
@@ -248,6 +330,7 @@ class AdvancedPredictionModel:
                     elif total > 3.2:
                         recommendations.append({
                             "market": "Goles Totales",
+                            # safe_under is intentionally above projection (safer under bet)
                             "bet": f"OVER {pred['safe_under_line']}",
                             "confidence": bet_confidence,
                             "risk": risk_level,
