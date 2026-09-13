@@ -101,12 +101,15 @@ class AdvancedDataProcessor:
             home_id = m.get('home_team', {}).get('id') if isinstance(m.get('home_team'), dict) else m.get('home_team_id')
             is_home = str(home_id) == str(team_id)
 
-            gf = m.get('home_score', 0) if is_home else m.get('away_score', 0)
-            ga = m.get('away_score', 0) if is_home else m.get('home_score', 0)
-
-            # Convertir a enteros de forma segura
-            gf = int(gf) if gf is not None else 0
-            ga = int(ga) if ga is not None else 0
+            raw_home_score = m.get('home_score')
+            raw_away_score = m.get('away_score')
+            if raw_home_score is None or raw_away_score is None:
+                continue
+            try:
+                gf = int(raw_home_score) if is_home else int(raw_away_score)
+                ga = int(raw_away_score) if is_home else int(raw_home_score)
+            except (ValueError, TypeError):
+                continue
 
             goals_for.append(gf)
             goals_against.append(ga)
@@ -163,8 +166,8 @@ class AdvancedDataProcessor:
             "home_advantage": home_adv,
             "xg": avg_xg,  # Devolverá float con el promedio o None si no hay datos
             "consistency": {
-                "offensive_consistency": max(0.0, 1.0 - (offensive_std / (avg_gf + 1e-5))),
-                "defensive_consistency": max(0.0, 1.0 - (defensive_std / (avg_ga + 1e-5))),
+                "offensive_consistency": max(0.0, 1.0 - (offensive_std / avg_gf)) if avg_gf > 0 else 0.0,
+                "defensive_consistency": max(0.0, 1.0 - (defensive_std / avg_ga)) if avg_ga > 0 else 0.0,
                 "offensive_std": offensive_std
             }
         }
@@ -187,7 +190,7 @@ class AdvancedDataProcessor:
                 continue
 
             try:
-                m_dt = datetime.strptime(date_str.split('T')[0], "%Y-%m-%d")
+                m_dt = datetime.strptime(date_str.split('T')[0] if 'T' in date_str else date_str, "%Y-%m-%d")
             except ValueError:
                 continue
 
@@ -215,8 +218,15 @@ class AdvancedDataProcessor:
             h_id = m.get('home_team', {}).get('id') if isinstance(m.get('home_team'), dict) else m.get('home_team_id')
             is_home = str(h_id) == str(team_id)
 
-            gf = int(m.get('home_score', 0) if is_home else m.get('away_score', 0))
-            ga = int(m.get('away_score', 0) if is_home else m.get('home_score', 0))
+            raw_home_score = m.get('home_score')
+            raw_away_score = m.get('away_score')
+            if raw_home_score is None or raw_away_score is None:
+                continue
+            try:
+                gf = int(raw_home_score) if is_home else int(raw_away_score)
+                ga = int(raw_away_score) if is_home else int(raw_home_score)
+            except (ValueError, TypeError):
+                continue
 
             pts = 3 if gf > ga else (1 if gf == ga else 0)
 
@@ -264,8 +274,15 @@ class AdvancedDataProcessor:
             h_id = str(m.get('home_team', {}).get('id') if isinstance(m.get('home_team'), dict) else m.get('home_team_id'))
             is_a_home = h_id == str(team_a_id)
 
-            gf_a = int(m.get('home_score', 0) if is_a_home else m.get('away_score', 0))
-            gf_b = int(m.get('away_score', 0) if is_a_home else m.get('home_score', 0))
+            raw_home_score = m.get('home_score')
+            raw_away_score = m.get('away_score')
+            if raw_home_score is None or raw_away_score is None:
+                continue
+            try:
+                gf_a = int(raw_home_score) if is_a_home else int(raw_away_score)
+                gf_b = int(raw_away_score) if is_a_home else int(raw_home_score)
+            except (ValueError, TypeError):
+                continue
 
             a_goals.append(gf_a)
             b_goals.append(gf_b)

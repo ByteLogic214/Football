@@ -1,3 +1,4 @@
+import sys
 import os
 import math
 from engine.api_client import FootballDataClient
@@ -63,6 +64,16 @@ def run_advanced_pipeline(match_id):
     hist_a = client.get_historical_team_data(team_a_id, match_date)
     hist_b = client.get_historical_team_data(team_b_id, match_date)
     
+    # VALIDACIÓN DEFENSIVA CRÍTICA: Control de daños ante fallos de API o registros vacíos
+    if hist_a is None or hist_b is None:
+        sys.exit("❌ ERROR CRÍTICO: No se encontraron partidos históricos (los datos son nulos). Proceso de Machine Learning abortado.")
+        
+    if (isinstance(hist_a, list) and len(hist_a) == 0) or (isinstance(hist_b, list) and len(hist_b) == 0):
+        sys.exit("❌ ERROR CRÍTICO: El historial de partidos devuelto por la API está vacío. Predicciones detenidas para evitar sesgar el modelo.")
+        
+    if not isinstance(hist_a, list) or not isinstance(hist_b, list):
+        sys.exit("❌ ERROR CRÍTICO: Los datos devueltos no tienen un formato de lista válido. Abortando bloque de Machine Learning.")
+
     print(f"   • {team_a_name}: {len(hist_a)} partidos históricos")
     print(f"   • {team_b_name}: {len(hist_b)} partidos históricos\n")
 
