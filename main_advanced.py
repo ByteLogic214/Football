@@ -1,7 +1,30 @@
 import os
+import math
 from engine.api_client import FootballDataClient
 from engine.processor_advanced import AdvancedDataProcessor
 from engine.model_advanced import AdvancedPredictionModel
+
+
+def _format_xg(val):
+    """
+    Formatea de manera segura el valor de xG para evitar imprimir 'None' o 'Ninguno'.
+    Acepta float, int o cadenas numéricas.
+    """
+    if val is None:
+        return "No disponible"
+    if isinstance(val, str):
+        if val.strip().lower() in ["none", "nan", "null", "ninguno", ""]:
+            return "No disponible"
+        try:
+            val = float(val)
+        except ValueError:
+            return "No disponible"
+    if isinstance(val, (int, float)):
+        if math.isnan(val):
+            return "No disponible"
+        return f"{val:.2f}"
+    return "No disponible"
+
 
 def run_advanced_pipeline(match_id):
     print(f"\n{'='*70}")
@@ -120,11 +143,17 @@ def run_advanced_pipeline(match_id):
     print(f"  • Puntos promedio fuera: {home_adv.get('away_points_avg', 0):.2f}")
     print(f"  • ÍNDICE DE VENTAJA GENERAL: {home_adv.get('home_advantage_index', 1):.2f}")
     
-    # Sección 4: Expected Goals (xG)
+    # Sección 4: Expected Goals (xG) - Formateo defensivo corregido
     print(f"\n\n⚽ EXPECTED GOALS (xG)")
     print("-" * 70)
-    print(f"  • {team_a_name}: {avg_a.get('xg', 'N/A')} xG por partido")
-    print(f"  • {team_b_name}: {avg_b.get('xg', 'N/A')} xG por partido")
+    xg_a_raw = avg_a.get('xg') if not isinstance(avg_a.get('xg'), dict) else avg_a.get('xg', {}).get('val')
+    xg_b_raw = avg_b.get('xg') if not isinstance(avg_b.get('xg'), dict) else avg_b.get('xg', {}).get('val')
+    
+    xg_a_formatted = _format_xg(xg_a_raw)
+    xg_b_formatted = _format_xg(xg_b_raw)
+    
+    print(f"  • {team_a_name}: {xg_a_formatted} xG por partido")
+    print(f"  • {team_b_name}: {xg_b_formatted} xG por partido")
     
     # Sección 5: Head-to-Head
     print(f"\n\n⚔️  HISTORIAL DIRECTO (Head-to-Head)")
@@ -196,6 +225,7 @@ def run_advanced_pipeline(match_id):
             print(f"   Razón: {rec['reason']}\n")
     
     print(f"{'='*70}\n")
+
 
 if __name__ == "__main__":
     M_ID = os.getenv('MATCH_ID')
