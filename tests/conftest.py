@@ -1,5 +1,12 @@
-"""Fixtures compartidas. Los datos sintéticos SON SOLO PARA TESTS: reproducen
-la forma estadística de datos reales para que la suite corra rápido y sin red."""
+"""
+tests/conftest.py
+=================
+Fixtures compartidas. Los datos sintéticos aquí generados SON SOLO PARA
+TESTS: reproducen la forma estadística de datos reales de TheStatsAPI
+para que la suite corra rápido y sin red. El pipeline de producción
+nunca usa estos generadores.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -11,6 +18,9 @@ from engine.thestats_features import (
     add_venue_and_fatigue_features, add_rolling_features, match_to_team_rows)
 from engine.ml_pipeline import build_model_matrix
 
+# --------------------------------------------------------------------------- #
+# Payloads con la forma EXACTA de las respuestas de TheStatsAPI (para mocks)
+# --------------------------------------------------------------------------- #
 MATCH_PAYLOAD = {
     "data": {
         "id": "mt_838955483",
@@ -67,17 +77,24 @@ PLAYER_STATS_PAYLOAD = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# Generador determinista de un frame equipo-partido con estadística realista
+# --------------------------------------------------------------------------- #
 def make_team_frame(seed: int = 7, n_teams: int = 10, n_rounds: int = 30) -> pd.DataFrame:
-    """Liga sintética round-robin con fuerzas latentes y goles ~ Poisson.
-    Fluye por el pipeline REAL de features (umbrales reducidos para CI)."""
+    """
+    Liga sintética round-robin con fuerzas de ataque/defensa latentes y
+    goles ~ Poisson. Produce el frame a través del pipeline REAL de
+    features (con umbrales reducidos para tener señal con pocos datos).
+    """
     rng = np.random.default_rng(seed)
-    attack = np.exp(rng.normal(0.0, 0.30, n_teams))
-    defense_weak = np.exp(rng.normal(0.0, 0.25, n_teams))
+    attack = np.exp(rng.normal(0.0, 0.30, n_teams))     # ~1.0 = promedio
+    defense_weak = np.exp(rng.normal(0.0, 0.25, n_teams))  # >1 = defensa débil
     team_ids = [f"tm_{i:04d}" for i in range(n_teams)]
 
     rows: list[dict] = []
     dates = pd.date_range("2025-08-01", periods=n_rounds, freq="7D")
     for r in range(n_rounds):
+        # emparejamiento circular: cada equipo juega una vez por jornada
         order = [(i + r) % n_teams for i in range(n_teams)]
         for k in range(n_teams // 2):
             hi, ai = order[k], order[n_teams - 1 - k]
@@ -88,7 +105,7 @@ def make_team_frame(seed: int = 7, n_teams: int = 10, n_rounds: int = 30) -> pd.
             mid = f"mt_{r:03d}_{k:02d}"
             iso = dates[r].strftime("%Y-%m-%d") + "T15:00:00.000Z"
 
-            def side_stats(lam: float) -> dict:
+            def side_stats(lam: float, gf: int) -> dict:
                 shots = int(max(0, rng.poisson(8 + 4 * lam)))
                 on_t = int(rng.binomial(shots, 0.36))
                 xg = float(max(0.05, lam + rng.normal(0, 0.22)))
@@ -101,7 +118,7 @@ def make_team_frame(seed: int = 7, n_teams: int = 10, n_rounds: int = 30) -> pd.
                         "corners": corners, "fouls": fouls,
                         "passes": passes, "acc": acc}
 
-            hs, as_ = side_stats(lam_h), side_stats(lam_a)
+            hs, as_ = side_stats(lam_h, gh), side_stats(lam_a, ga)
             match = {"id": mid, "status": "finished", "utc_date": iso,
                      "competition_id": "comp_999", "season_id": "sn_999",
                      "matchday": r + 1,
@@ -139,6 +156,9 @@ def make_team_frame(seed: int = 7, n_teams: int = 10, n_rounds: int = 30) -> pd.
     return df
 
 
+# --------------------------------------------------------------------------- #
+# Fixtures pytest
+# --------------------------------------------------------------------------- #
 @pytest.fixture(scope="session")
 def team_frame() -> pd.DataFrame:
     return make_team_frame()
