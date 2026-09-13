@@ -265,6 +265,7 @@ class MatchOutcomeModel:
                 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
                 def objective(trial: Any) -> float:
+                    base = PARAM_SETS_FULL[0]
                     params = {
                         "learning_rate": trial.suggest_float("learning_rate", 0.02, 0.1, log=True),
                         "n_estimators": trial.suggest_int("n_estimators", 200, 800, step=100),
@@ -275,6 +276,7 @@ class MatchOutcomeModel:
                         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
                         "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 10.0, log=True),
                     }
+                    _ = base
                     return _record(params)
 
                 study = optuna.create_study(
