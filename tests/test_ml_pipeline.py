@@ -1,4 +1,5 @@
-"""Pruebas unitarias e integración del modelo."""
+"""tests/test_ml_pipeline.py — pruebas unitarias e integración del modelo."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -100,16 +101,18 @@ def test_end_to_end_entrena_y_reporta(model_matrix, tmp_path):
     assert np.array(rep["confusion_matrix"]).shape == (3, 3)
     assert len(rep["feature_importance"]) == X.shape[1]
     assert 0.0 <= rep["holdout"]["accuracy"] <= 1.0
-    assert 0.0 < rep["holdout"]["log_loss"] < np.log(3) + 0.5
+    assert 0.0 < rep["holdout"]["log_loss"] < np.log(3) + 0.5  # mejor que ruido puro
     assert np.isfinite(rep["holdout"]["brier"])
     assert rep["n_train"] + rep["n_holdout"] == len(X)
+    # probabilidades del holdout dentro de [0,1] y normalizadas
     proba = validate_probabilities(model.predict_proba(
         X.iloc[-rep["n_holdout"]:]))
     assert proba.shape == (rep["n_holdout"], 3)
 
 
 def test_modelo_supera_al_azar_en_datos_estructurados(model_matrix):
-    """Con señal real (fuerzas latentes), la accuracy debe superar el azar."""
+    """Con datos sintéticos con señal real (fuerzas latentes), la accuracy
+    debe superar claramente el azar multinomial (~33%)."""
     X, y, meta = model_matrix
     model = _fast_model().fit(X, y, meta["date"])
     assert model.report_["holdout"]["accuracy"] > 0.45
